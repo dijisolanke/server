@@ -11,7 +11,7 @@ const io = socketIo(server, {
   cors: {
     origin: [
       "http://localhost:5173",
-      "https://confession-lake-five.vercel.app/",
+      "https://confession-lake-five.vercel.app",
       "https://server-0w31.onrender.com",
     ],
     methods: ["GET", "POST"],
