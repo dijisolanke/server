@@ -1,0 +1,4 @@
+resource-credentials.md
+.vscode/*
+node_modules
+.env
