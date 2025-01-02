@@ -62,7 +62,7 @@ io.on("connection", (socket) => {
     console.log(`${socket.alias} has left`);
   });
 
-  // WebRTC signaling
+  // WebRTC Signaling
   socket.on("offer", (data) => {
     socket.to(data.to).emit("offer", {
       offer: data.offer,
