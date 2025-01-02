@@ -64,6 +64,7 @@ io.on("connection", (socket) => {
 
   // WebRTC Signaling
   socket.on("offer", (data) => {
+    console.log("offer received", data);
     socket.to(data.to).emit("offer", {
       offer: data.offer,
       from: socket.id,
@@ -71,6 +72,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("answer", (data) => {
+    console.log("Answer received:", data);
     socket.to(data.to).emit("answer", {
       answer: data.answer,
       from: socket.id,
@@ -78,6 +80,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("ice-candidate", (data) => {
+    console.log("ICE candidate received:", data);
     socket.to(data.to).emit("ice-candidate", {
       candidate: data.candidate,
       from: socket.id,
