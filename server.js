@@ -2,7 +2,6 @@ const express = require("express");
 const http = require("http");
 const socketIo = require("socket.io");
 const courtJester = require("./courtJester");
-const { iceServers } = require("./magicConfig");
 require("dotenv").config();
 
 const app = express();
@@ -19,82 +18,95 @@ const io = socketIo(server, {
   },
 });
 
-let waitingUsers = [];
+let waitingUsers = new Map();
+const activeRooms = new Map();
 
 io.on("connection", (socket) => {
-  console.log("A new guest has arrived at the castle");
-
   socket.on("setAlias", (alias) => {
     socket.alias = alias;
-    waitingUsers.push(socket);
+    waitingUsers.set(socket.id, { socket, alias });
     io.emit(
       "waitingUsersUpdate",
-      waitingUsers.map((user) => user.alias)
+      Array.from(waitingUsers.values()).map((u) => u.alias)
     );
 
-    if (waitingUsers.length >= 2) {
-      const currentUser = waitingUsers.shift();
-      const partner = waitingUsers.shift();
+    if (waitingUsers.size >= 2) {
+      const [currentUser, partner] = Array.from(waitingUsers.values()).slice(
+        0,
+        2
+      );
+      const roomId = `${currentUser.socket.id}-${partner.socket.id}`;
 
-      const roomId = `${currentUser.id}-${partner.id}`;
-      currentUser.join(roomId);
-      partner.join(roomId);
+      waitingUsers.delete(currentUser.socket.id);
+      waitingUsers.delete(partner.socket.id);
 
-      io.to(currentUser.id).emit("paired", {
+      activeRooms.set(roomId, {
+        users: [currentUser.socket.id, partner.socket.id],
+        readyState: new Set(),
+      });
+
+      currentUser.socket.join(roomId);
+      partner.socket.join(roomId);
+
+      io.to(currentUser.socket.id).emit("paired", {
         partnerAlias: partner.alias,
         roomId,
       });
-      io.to(partner.id).emit("paired", {
+      io.to(partner.socket.id).emit("paired", {
         partnerAlias: currentUser.alias,
         roomId,
       });
     }
+  });
 
-    console.log(`${alias} has joined`);
+  socket.on("ready", ({ roomId }) => {
+    const room = activeRooms.get(roomId);
+    if (room) {
+      room.readyState.add(socket.id);
+      if (room.readyState.size === 2) {
+        io.to(roomId).emit("begin", { roomId });
+      }
+    }
   });
 
   socket.on("disconnect", () => {
-    waitingUsers = waitingUsers.filter((user) => user.id !== socket.id);
+    waitingUsers.delete(socket.id);
     io.emit(
       "waitingUsersUpdate",
-      waitingUsers.map((user) => user.alias)
+      Array.from(waitingUsers.values()).map((u) => u.alias)
     );
-    console.log(`${socket.alias} has left`);
+
+    for (const [roomId, room] of activeRooms) {
+      if (room.users.includes(socket.id)) {
+        io.to(roomId).emit("partnerLeft");
+        activeRooms.delete(roomId);
+        break;
+      }
+    }
   });
 
-  // WebRTC signaling
   socket.on("offer", (data) => {
-    socket.to(data.to).emit("offer", {
-      offer: data.offer,
-      from: socket.id,
-    });
+    socket.to(data.to).emit("offer", { offer: data.offer, from: socket.id });
   });
 
   socket.on("answer", (data) => {
-    socket.to(data.to).emit("answer", {
-      answer: data.answer,
-      from: socket.id,
-    });
+    socket.to(data.to).emit("answer", { answer: data.answer, from: socket.id });
   });
 
   socket.on("ice-candidate", (data) => {
-    socket.to(data.to).emit("ice-candidate", {
-      candidate: data.candidate,
-      from: socket.id,
-    });
+    socket
+      .to(data.to)
+      .emit("ice-candidate", { candidate: data.candidate, from: socket.id });
   });
 
   socket.on("joinRoom", ({ roomId }) => {
-    console.log(`User ${socket.id} joining room ${roomId}`);
     socket.join(roomId);
   });
 
-  socket.on("leaveRoom", () => {
-    const roomId = [...socket.rooms].find((room) => room !== socket.id);
-    if (roomId) {
-      socket.to(roomId).emit("partnerLeft");
-      socket.leave(roomId);
-    }
+  socket.on("leaveRoom", ({ roomId }) => {
+    socket.to(roomId).emit("partnerLeft");
+    activeRooms.delete(roomId);
+    socket.leave(roomId);
   });
 
   socket.on("error", (error) => {
@@ -104,5 +116,5 @@ io.on("connection", (socket) => {
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, "0.0.0.0", () =>
-  console.log(`The castle gates are open on port ${PORT}`)
+  console.log(`Server running on port ${PORT}`)
 );
