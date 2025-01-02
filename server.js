@@ -58,6 +58,11 @@ io.on("connection", (socket) => {
         partnerAlias: currentUser.alias,
         roomId,
       });
+
+      console.log(`Room created: ${roomId}`);
+      console.log(
+        `Users in room: ${currentUser.socket.id}, ${partner.socket.id}`
+      );
     }
   });
 
@@ -90,8 +95,8 @@ io.on("connection", (socket) => {
   });
 
   socket.on("offer", (data) => {
-    socket.to(data.to).emit("offer", { offer: data.offer, from: socket.id });
     console.log(`Offer from ${socket.id} to ${data.to}`);
+    socket.to(data.to).emit("offer", { offer: data.offer, from: socket.id });
   });
 
   socket.on("answer", (data) => {
