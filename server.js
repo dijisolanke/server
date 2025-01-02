@@ -22,7 +22,9 @@ let waitingUsers = new Map();
 const activeRooms = new Map();
 
 io.on("connection", (socket) => {
+  console.log("New connection:", socket.id);
   socket.on("setAlias", (alias) => {
+    console.log(`User ${socket.id} set alias to ${alias}`);
     socket.alias = alias;
     waitingUsers.set(socket.id, { socket, alias });
     io.emit(
@@ -61,11 +63,13 @@ io.on("connection", (socket) => {
 
   socket.on("ready", ({ roomId }) => {
     const room = activeRooms.get(roomId);
+    console.log(`Active rooms ${room} `);
     if (room) {
       room.readyState.add(socket.id);
       if (room.readyState.size === 2) {
         io.to(roomId).emit("begin", { roomId });
       }
+      console.log(`Room ready state ${room.readyState.size} `);
     }
   });
 
@@ -87,20 +91,24 @@ io.on("connection", (socket) => {
 
   socket.on("offer", (data) => {
     socket.to(data.to).emit("offer", { offer: data.offer, from: socket.id });
+    console.log(`Offer from ${socket.id} to ${data.to}`);
   });
 
   socket.on("answer", (data) => {
     socket.to(data.to).emit("answer", { answer: data.answer, from: socket.id });
+    console.log(`Answer from ${socket.id} to ${data.to}`);
   });
 
   socket.on("ice-candidate", (data) => {
     socket
       .to(data.to)
       .emit("ice-candidate", { candidate: data.candidate, from: socket.id });
+    console.log(`Ice candidate from ${socket.id} to ${data.to}`);
   });
 
   socket.on("joinRoom", ({ roomId }) => {
     socket.join(roomId);
+    console.log(`User ${socket.id} joined room ${roomId}`);
   });
 
   socket.on("leaveRoom", ({ roomId }) => {
