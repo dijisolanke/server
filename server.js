@@ -2,7 +2,8 @@ const express = require("express");
 const http = require("http");
 const socketIo = require("socket.io");
 const courtJester = require("./courtJester");
-const { iceServers } = require("./magicConfig");
+// const { iceServers } = require("./magicConfig");
+const axios = require("axios");
 require("dotenv").config();
 
 const app = express();
@@ -19,10 +20,28 @@ const io = socketIo(server, {
   },
 });
 
+async function getTurnCredentials() {
+  try {
+    const response = await axios.get(
+      `https://confessions.metered.live/api/v1/turn/credentials?apiKey=${process.env.TURN_API_KEY}`
+    );
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching TURN credentials:", error);
+    return [{ urls: "stun:stun.relay.metered.ca:80" }];
+  }
+}
+
 let waitingUsers = [];
 
 io.on("connection", (socket) => {
   console.log("A new guest has arrived at the castle");
+
+  socket.on("requestTurnCredentials", async () => {
+    const credentials = await getTurnCredentials();
+    console.log("credentials", credentials); // remove later
+    socket.emit("turnCredentials", credentials);
+  });
 
   socket.on("setAlias", (alias) => {
     socket.alias = alias;
