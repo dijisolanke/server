@@ -37,12 +37,6 @@ let waitingUsers = [];
 io.on("connection", (socket) => {
   console.log("A new guest has arrived at the castle");
 
-  socket.on("requestTurnCredentials", async () => {
-    const credentials = await getTurnCredentials();
-    console.log("credentials", credentials); // remove later
-    socket.emit("turnCredentials", credentials);
-  });
-
   socket.on("setAlias", (alias) => {
     socket.alias = alias;
     waitingUsers.push(socket);
@@ -62,23 +56,22 @@ io.on("connection", (socket) => {
       io.to(currentUser.id).emit("paired", {
         partnerAlias: partner.alias,
         roomId,
+        isInitiator: true, // Add this
       });
       io.to(partner.id).emit("paired", {
         partnerAlias: currentUser.alias,
         roomId,
+        isInitiator: false, // Add this
       });
     }
 
     console.log(`${alias} has joined`);
   });
 
-  socket.on("disconnect", () => {
-    waitingUsers = waitingUsers.filter((user) => user.id !== socket.id);
-    io.emit(
-      "waitingUsersUpdate",
-      waitingUsers.map((user) => user.alias)
-    );
-    console.log(`${socket.alias} has left`);
+  socket.on("requestTurnCredentials", async () => {
+    const credentials = await getTurnCredentials();
+    console.log("credentials", credentials); // remove later
+    socket.emit("turnCredentials", credentials);
   });
 
   // WebRTC Signaling
@@ -117,6 +110,15 @@ io.on("connection", (socket) => {
       socket.to(roomId).emit("partnerLeft");
       socket.leave(roomId);
     }
+  });
+
+  socket.on("disconnect", () => {
+    waitingUsers = waitingUsers.filter((user) => user.id !== socket.id);
+    io.emit(
+      "waitingUsersUpdate",
+      waitingUsers.map((user) => user.alias)
+    );
+    console.log(`${socket.alias} has left`);
   });
 
   socket.on("error", (error) => {
