@@ -46,6 +46,7 @@ io.on("connection", (socket) => {
     );
 
     if (waitingUsers.length >= 2) {
+      //Logic for pairing users
       const currentUser = waitingUsers.shift();
       const partner = waitingUsers.shift();
 
@@ -110,6 +111,10 @@ io.on("connection", (socket) => {
       socket.to(roomId).emit("partnerLeft");
       socket.leave(roomId);
     }
+  });
+
+  socket.on("mediaPermissionDenied", ({ roomId }) => {
+    socket.to(roomId).emit("mediaPermissionDenied");
   });
 
   socket.on("disconnect", () => {
