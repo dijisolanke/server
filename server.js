@@ -114,7 +114,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("mediaPermissionDenied", ({ roomId }) => {
-    socket.to(roomId).emit("mediaPermissionDenied");
+    socket.to(roomId).emit(" mediaPermissionDenied ");
   });
 
   socket.on("disconnect", () => {
