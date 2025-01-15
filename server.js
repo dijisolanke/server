@@ -112,6 +112,10 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("mediaPermissionDenied", ({ roomId }) => {
+    socket.to(roomId).emit("mediaPermissionDenied");
+  });
+
   socket.on("disconnect", () => {
     waitingUsers = waitingUsers.filter((user) => user.id !== socket.id);
     io.emit(
