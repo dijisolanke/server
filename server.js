@@ -22,7 +22,7 @@ const io = socketIo(server, {
 
 // Add room tracking and cleanup
 const rooms = new Map();
-const ROOM_TIMEOUT = 1000 * 10; // 10 seconds in milliseconds
+const ROOM_TIMEOUT = 1000 * 30; // 10 seconds in milliseconds
 // const ROOM_TIMEOUT = 1000 * 60 * 15;
 
 const MAX_CONCURRENT_ROOMS = 30; // 60 users max
