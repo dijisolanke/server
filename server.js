@@ -20,17 +20,6 @@ const io = socketIo(server, {
   },
 });
 
-async function getTurnCredentials() {
-  try {
-    const response = await axios.get(
-      `https://confessions.metered.live/api/v1/turn/credentials?apiKey=${process.env.TURN_API_KEY}`
-    );
-    return response.data;
-  } catch (error) {
-    console.error("Error fetching TURN credentials:", error);
-    return [{ urls: "stun:stun.relay.metered.ca:80" }];
-  }
-}
 // Add room tracking and cleanup
 const rooms = new Map();
 const ROOM_TIMEOUT = 1000 * 10; // 10 seconds in milliseconds
@@ -46,8 +35,6 @@ const metrics = {
   totalConnections: 0,
   failedConnections: 0,
 };
-
-let waitingUsers = [];
 
 function checkRoomTimeout(roomId) {
   const room = rooms.get(roomId);
@@ -81,39 +68,30 @@ function checkRoomTimeout(roomId) {
   }
 }
 
-// Add periodic check for all rooms
 setInterval(() => {
   for (const roomId of rooms.keys()) {
     checkRoomTimeout(roomId);
   }
 }, 1000 * 60); // Check every minute
 
+async function getTurnCredentials() {
+  try {
+    const response = await axios.get(
+      `https://confessions.metered.live/api/v1/turn/credentials?apiKey=${process.env.TURN_API_KEY}`
+    );
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching TURN credentials:", error);
+    return [{ urls: "stun:stun.relay.metered.ca:80" }];
+  }
+}
+
+let waitingUsers = [];
+
 io.on("connection", (socket) => {
   console.log("A new guest has arrived at the castle");
 
-  metrics.totalConnections++;
-
-  setInterval(() => {
-    console.log("Current Metrics:", {
-      ...metrics,
-      activeRooms: rooms.size,
-      waitingUsers: waitingUsers.length,
-    });
-  }, 1000 * 60 * 5);
-
-  //logic for max ongoing calls
-  if (rooms.size >= MAX_CONCURRENT_ROOMS) {
-    socket.emit("serverBusy");
-    socket.disconnect();
-    return;
-  }
-
   socket.on("setAlias", (alias) => {
-    if (waitingUsers.length >= MAX_WAITING_USERS) {
-      socket.emit("waitingRoomFull");
-      return;
-    }
-
     socket.alias = alias;
     waitingUsers.push(socket);
     io.emit(
@@ -124,8 +102,8 @@ io.on("connection", (socket) => {
     if (waitingUsers.length >= 2) {
       const currentUser = waitingUsers.shift();
       const partner = waitingUsers.shift();
-      const roomId = `${currentUser.id}-${partner.id}`;
 
+      const roomId = `${currentUser.id}-${partner.id}`;
       rooms.set(roomId, {
         users: [currentUser.id, partner.id],
         createdAt: Date.now(),
@@ -146,7 +124,6 @@ io.on("connection", (socket) => {
         isInitiator: false, // Add this
       });
     }
-
     console.log(`${alias} has joined`);
   });
 
@@ -199,11 +176,6 @@ io.on("connection", (socket) => {
       socket.leave(roomId);
     }
   });
-
-  // socket.on("mediaPermissionDenied", ({ roomId }) => {
-  //   socket.to(roomId).emit("mediaPermissionDenied");
-  // });
-
   socket.on("disconnect", () => {
     waitingUsers = waitingUsers.filter((user) => user.id !== socket.id);
     io.emit(
@@ -218,7 +190,6 @@ io.on("connection", (socket) => {
       }
     }
   });
-
   socket.on("error", (error) => {
     courtJester.handleError(socket, "generalError", error.message);
   });
