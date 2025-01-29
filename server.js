@@ -71,13 +71,13 @@ io.on("connection", (socket) => {
 
   socket.on("requestTurnCredentials", async () => {
     const credentials = await getTurnCredentials();
-    console.log("credentials", credentials); // remove later
+    // console.log("credentials", credentials);
     socket.emit("turnCredentials", credentials);
   });
 
   // WebRTC Signaling
   socket.on("offer", (data) => {
-    console.log("offer received", data);
+    // console.log("offer received", data);
     socket.to(data.to).emit("offer", {
       offer: data.offer,
       from: socket.id,
@@ -85,7 +85,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("answer", (data) => {
-    console.log("Answer received:", data);
+    // console.log("Answer received:", data);
     socket.to(data.to).emit("answer", {
       answer: data.answer,
       from: socket.id,
