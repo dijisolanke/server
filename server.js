@@ -31,13 +31,89 @@ async function getTurnCredentials() {
     return [{ urls: "stun:stun.relay.metered.ca:80" }];
   }
 }
+// Add room tracking and cleanup
+const rooms = new Map();
+const ROOM_TIMEOUT = 1000 * 10; // 10 seconds in milliseconds
+// const ROOM_TIMEOUT = 1000 * 60 * 15;
+
+const MAX_CONCURRENT_ROOMS = 30; // 60 users max
+const MAX_WAITING_USERS = 20;
+
+// Add basic monitoring
+const metrics = {
+  activeRooms: 0,
+  waitingUsers: 0,
+  totalConnections: 0,
+  failedConnections: 0,
+};
 
 let waitingUsers = [];
+
+function checkRoomTimeout(roomId) {
+  const room = rooms.get(roomId);
+  if (!room) return;
+
+  const now = Date.now();
+  const roomAge = now - room.createdAt;
+
+  if (roomAge >= ROOM_TIMEOUT) {
+    // Room has exceeded 15 minutes
+    console.log(`Room ${roomId} has timed out`);
+
+    // Notify users in the room
+    io.to(roomId).emit("roomTimeout", {
+      message: "Chat session has ended due to time limit",
+    });
+
+    // Clean up the room
+    rooms.delete(roomId);
+
+    // Force disconnect users from the room
+    const roomSockets = io.sockets.adapter.rooms.get(roomId);
+    if (roomSockets) {
+      for (const socketId of roomSockets) {
+        const socket = io.sockets.sockets.get(socketId);
+        if (socket) {
+          socket.leave(roomId);
+        }
+      }
+    }
+  }
+}
+
+// Add periodic check for all rooms
+setInterval(() => {
+  for (const roomId of rooms.keys()) {
+    checkRoomTimeout(roomId);
+  }
+}, 1000 * 60); // Check every minute
 
 io.on("connection", (socket) => {
   console.log("A new guest has arrived at the castle");
 
+  metrics.totalConnections++;
+
+  setInterval(() => {
+    console.log("Current Metrics:", {
+      ...metrics,
+      activeRooms: rooms.size,
+      waitingUsers: waitingUsers.length,
+    });
+  }, 1000 * 60 * 5);
+
+  //logic for max ongoing calls
+  if (rooms.size >= MAX_CONCURRENT_ROOMS) {
+    socket.emit("serverBusy");
+    socket.disconnect();
+    return;
+  }
+
   socket.on("setAlias", (alias) => {
+    if (waitingUsers.length >= MAX_WAITING_USERS) {
+      socket.emit("waitingRoomFull");
+      return;
+    }
+
     socket.alias = alias;
     waitingUsers.push(socket);
     io.emit(
@@ -48,8 +124,14 @@ io.on("connection", (socket) => {
     if (waitingUsers.length >= 2) {
       const currentUser = waitingUsers.shift();
       const partner = waitingUsers.shift();
-
       const roomId = `${currentUser.id}-${partner.id}`;
+
+      rooms.set(roomId, {
+        users: [currentUser.id, partner.id],
+        createdAt: Date.now(),
+        lastActivity: Date.now(),
+      });
+
       currentUser.join(roomId);
       partner.join(roomId);
 
@@ -92,6 +174,11 @@ io.on("connection", (socket) => {
   });
 
   socket.on("ice-candidate", (data) => {
+    const room = rooms.get(data.to);
+    if (room) {
+      room.lastActivity = Date.now();
+    }
+
     console.log("ICE candidate received:", data);
     socket.to(data.to).emit("ice-candidate", {
       candidate: data.candidate,
@@ -107,14 +194,15 @@ io.on("connection", (socket) => {
   socket.on("leaveRoom", () => {
     const roomId = [...socket.rooms].find((room) => room !== socket.id);
     if (roomId) {
+      rooms.delete(roomId); // Clean up room when someone leaves
       socket.to(roomId).emit("partnerLeft");
       socket.leave(roomId);
     }
   });
 
-  socket.on("mediaPermissionDenied", ({ roomId }) => {
-    socket.to(roomId).emit("mediaPermissionDenied");
-  });
+  // socket.on("mediaPermissionDenied", ({ roomId }) => {
+  //   socket.to(roomId).emit("mediaPermissionDenied");
+  // });
 
   socket.on("disconnect", () => {
     waitingUsers = waitingUsers.filter((user) => user.id !== socket.id);
@@ -123,6 +211,12 @@ io.on("connection", (socket) => {
       waitingUsers.map((user) => user.alias)
     );
     console.log(`${socket.alias} has left`);
+
+    for (const [roomId, room] of rooms.entries()) {
+      if (room.users.includes(socket.id)) {
+        rooms.delete(roomId);
+      }
+    }
   });
 
   socket.on("error", (error) => {
