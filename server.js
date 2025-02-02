@@ -58,6 +58,19 @@ async function getTurnCredentials() {
   }
 }
 
+function handleRoomEnd(roomId) {
+  if (activeRooms.has(roomId)) {
+    activeRooms.delete(roomId);
+    endedRooms.add(roomId);
+    io.to(roomId).emit("roomEnded");
+
+    // Clean up ended room after 1 hour
+    setTimeout(() => {
+      endedRooms.delete(roomId);
+    }, 60 * 60 * 1000);
+  }
+}
+
 let waitingUsers = [];
 
 io.on("connection", (socket) => {
@@ -124,7 +137,7 @@ io.on("connection", (socket) => {
     if (roomId) {
       socket.to(roomId).emit("partnerLeft");
       socket.leave(roomId);
-      activeRooms.delete(roomId);
+      handleRoomEnd(roomId);
       attemptPairing();
     }
   });
@@ -141,7 +154,7 @@ io.on("connection", (socket) => {
     );
     const roomId = [...socket.rooms].find((room) => room !== socket.id);
     if (roomId) {
-      activeRooms.delete(roomId);
+      handleRoomEnd(roomId);
       attemptPairing();
     }
     console.log(`${socket.alias} has left`);
