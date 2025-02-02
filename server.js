@@ -73,6 +73,7 @@ io.on("connection", (socket) => {
         "roomsFullError",
         "All rooms are currently occupied. Please try again later"
       );
+      console.log("full housw");
     }
 
     console.log(`${alias} has joined`);
