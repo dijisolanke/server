@@ -2,12 +2,13 @@ const express = require("express");
 const http = require("http");
 const socketIo = require("socket.io");
 const courtJester = require("./courtJester");
-// const { iceServers } = require("./magicConfig");
 const axios = require("axios");
 require("dotenv").config();
 
-let activeRooms = new Map();
-let endedRooms = new Set();
+// Keep activeRooms as a Set for existing functionality
+let activeRooms = new Set();
+// Add endedRooms Set for tracking ended rooms
+const endedRooms = new Set();
 
 const app = express();
 const server = http.createServer(app);
@@ -29,12 +30,6 @@ function attemptPairing() {
     const partner = waitingUsers.shift();
 
     const roomId = `${currentUser.id}-${partner.id}`;
-
-    activeRooms.set(roomId, {
-      participants: new Set([currentUser.id, partner.id]),
-      createdAt: Date.now(),
-    });
-
     currentUser.join(roomId);
     partner.join(roomId);
 
@@ -71,24 +66,17 @@ function handleRoomEnd(roomId) {
     endedRooms.add(roomId);
     activeRooms.delete(roomId);
 
+    // Clean up ended room after 1 hour
     setTimeout(() => {
       endedRooms.delete(roomId);
     }, 60 * 60 * 1000);
   }
 }
 
-function isValidParticipant(socket, roomId) {
-  const room = activeRooms.get(roomId);
-  return room && room.participants.has(socket.id);
-}
-
 let waitingUsers = [];
 
 io.on("connection", (socket) => {
   console.log("A new guest has arrived at the castle");
-
-  // Store socket's current room for validation
-  let currentRoomId = null;
 
   socket.on("setAlias", (alias) => {
     socket.alias = alias;
@@ -112,14 +100,27 @@ io.on("connection", (socket) => {
 
   socket.on("requestTurnCredentials", async () => {
     const credentials = await getTurnCredentials();
-    // console.log("credentials", credentials);
     socket.emit("turnCredentials", credentials);
   });
 
-  // WebRTC Signaling
+  socket.on("joinRoom", ({ roomId }) => {
+    console.log(`User ${socket.id} attempting to join room ${roomId}`);
+
+    if (endedRooms.has(roomId)) {
+      socket.emit("roomEnded", { permanent: true });
+      return;
+    }
+
+    if (activeRooms.has(roomId)) {
+      socket.join(roomId);
+      console.log(`User ${socket.id} joined room ${roomId}`);
+    } else {
+      socket.emit("roomEnded", { permanent: true });
+    }
+  });
+
   socket.on("offer", (data) => {
-    // console.log("offer received", data);
-    if (isValidParticipant(socket, data.to)) {
+    if (activeRooms.has(data.to)) {
       socket.to(data.to).emit("offer", {
         offer: data.offer,
         from: socket.id,
@@ -128,8 +129,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("answer", (data) => {
-    // console.log("Answer received:", data);
-    if (isValidParticipant(socket, data.to)) {
+    if (activeRooms.has(data.to)) {
       socket.to(data.to).emit("answer", {
         answer: data.answer,
         from: socket.id,
@@ -138,8 +138,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("ice-candidate", (data) => {
-    // console.log("ICE candidate received:", data);
-    if (isValidParticipant(socket, data.to)) {
+    if (activeRooms.has(data.to)) {
       socket.to(data.to).emit("ice-candidate", {
         candidate: data.candidate,
         from: socket.id,
@@ -147,38 +146,18 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("joinRoom", ({ roomId }) => {
-    console.log(`User ${socket.id} joining room ${roomId}`);
-
-    // Check if room is ended
-    if (endedRooms.has(roomId)) {
-      socket.emit("roomEnded", { permanent: true });
-      return;
-    }
-
-    // Check if room exists and socket is a valid participant
-    if (!isValidParticipant(socket, roomId)) {
-      socket.emit("roomEnded", { permanent: true });
-      return;
-    }
-
-    currentRoomId = roomId;
-    socket.join(roomId);
-    console.log(`User ${socket.id} joined room ${roomId}`);
-  });
-
   socket.on("leaveRoom", () => {
-    if (currentRoomId) {
-      socket.to(currentRoomId).emit("partnerLeft");
-      socket.leave(currentRoomId);
-      handleRoomEnd(currentRoomId);
-      currentRoomId = null;
+    const roomId = [...socket.rooms].find((room) => room !== socket.id);
+    if (roomId) {
+      socket.to(roomId).emit("partnerLeft");
+      socket.leave(roomId);
+      handleRoomEnd(roomId);
       attemptPairing();
     }
   });
 
   socket.on("mediaPermissionDenied", ({ roomId }) => {
-    if (isValidParticipant(socket, roomId)) {
+    if (activeRooms.has(roomId)) {
       socket.to(roomId).emit("mediaPermissionDenied");
     }
   });
@@ -189,8 +168,10 @@ io.on("connection", (socket) => {
       "waitingUsersUpdate",
       waitingUsers.map((user) => user.alias)
     );
-    if (currentRoomId) {
-      handleRoomEnd(currentRoomId);
+
+    const roomId = [...socket.rooms].find((room) => room !== socket.id);
+    if (roomId) {
+      handleRoomEnd(roomId);
       attemptPairing();
     }
     console.log(`${socket.alias} has left`);
