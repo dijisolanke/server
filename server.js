@@ -6,7 +6,8 @@ const courtJester = require("./courtJester");
 const axios = require("axios");
 require("dotenv").config();
 
-let activeRooms = new Set();
+let activeRooms = new Map();
+let endedRooms = new Set();
 
 const app = express();
 const server = http.createServer(app);
@@ -28,6 +29,12 @@ function attemptPairing() {
     const partner = waitingUsers.shift();
 
     const roomId = `${currentUser.id}-${partner.id}`;
+
+    activeRooms.set(roomId, {
+      participants: new Set([currentUser.id, partner.id]),
+      createdAt: Date.now(),
+    });
+
     currentUser.join(roomId);
     partner.join(roomId);
 
@@ -59,22 +66,36 @@ async function getTurnCredentials() {
 }
 
 function handleRoomEnd(roomId) {
-  if (activeRooms.has(roomId)) {
-    activeRooms.delete(roomId);
-    endedRooms.add(roomId);
-    io.to(roomId).emit("roomEnded");
+  const room = activeRooms.get(roomId);
+  if (room) {
+    // Notify all participants in the room
+    io.to(roomId).emit("roomEnded", { permanent: true });
 
-    // Clean up ended room after 1 hour
+    // Add to ended rooms with timestamp
+    endedRooms.add(roomId);
+
+    // Delete from active rooms
+    activeRooms.delete(roomId);
+
+    // Clean up ended room after 3 seconds
     setTimeout(() => {
       endedRooms.delete(roomId);
-    }, 60 * 60 * 1000);
+    }, 3 * 1000);
   }
+}
+
+function isValidParticipant(socket, roomId) {
+  const room = activeRooms.get(roomId);
+  return room && room.participants.has(socket.id);
 }
 
 let waitingUsers = [];
 
 io.on("connection", (socket) => {
   console.log("A new guest has arrived at the castle");
+
+  // Store socket's current room for validation
+  let currentRoomId = null;
 
   socket.on("setAlias", (alias) => {
     socket.alias = alias;
@@ -105,39 +126,60 @@ io.on("connection", (socket) => {
   // WebRTC Signaling
   socket.on("offer", (data) => {
     // console.log("offer received", data);
-    socket.to(data.to).emit("offer", {
-      offer: data.offer,
-      from: socket.id,
-    });
+    if (isValidParticipant(socket, data.to)) {
+      socket.to(data.to).emit("offer", {
+        offer: data.offer,
+        from: socket.id,
+      });
+    }
   });
 
   socket.on("answer", (data) => {
     // console.log("Answer received:", data);
-    socket.to(data.to).emit("answer", {
-      answer: data.answer,
-      from: socket.id,
-    });
+    if (isValidParticipant(socket, data.to)) {
+      socket.to(data.to).emit("answer", {
+        answer: data.answer,
+        from: socket.id,
+      });
+    }
   });
 
   socket.on("ice-candidate", (data) => {
     // console.log("ICE candidate received:", data);
-    socket.to(data.to).emit("ice-candidate", {
-      candidate: data.candidate,
-      from: socket.id,
-    });
+    if (isValidParticipant(socket, data.to)) {
+      socket.to(data.to).emit("ice-candidate", {
+        candidate: data.candidate,
+        from: socket.id,
+      });
+    }
   });
 
   socket.on("joinRoom", ({ roomId }) => {
     console.log(`User ${socket.id} joining room ${roomId}`);
+
+    // Check if room is ended
+    if (endedRooms.has(roomId)) {
+      socket.emit("roomEnded", { permanent: true });
+      return;
+    }
+
+    // Check if room exists and socket is a valid participant
+    if (!isValidParticipant(socket, roomId)) {
+      socket.emit("roomEnded", { permanent: true });
+      return;
+    }
+
+    currentRoomId = roomId;
     socket.join(roomId);
+    console.log(`User ${socket.id} joined room ${roomId}`);
   });
 
   socket.on("leaveRoom", () => {
-    const roomId = [...socket.rooms].find((room) => room !== socket.id);
-    if (roomId) {
-      socket.to(roomId).emit("partnerLeft");
-      socket.leave(roomId);
-      handleRoomEnd(roomId);
+    if (currentRoomId) {
+      socket.to(currentRoomId).emit("partnerLeft");
+      socket.leave(currentRoomId);
+      handleRoomEnd(currentRoomId);
+      currentRoomId = null;
       attemptPairing();
     }
   });
@@ -152,9 +194,8 @@ io.on("connection", (socket) => {
       "waitingUsersUpdate",
       waitingUsers.map((user) => user.alias)
     );
-    const roomId = [...socket.rooms].find((room) => room !== socket.id);
-    if (roomId) {
-      handleRoomEnd(roomId);
+    if (currentRoomId) {
+      handleRoomEnd(currentRoomId);
       attemptPairing();
     }
     console.log(`${socket.alias} has left`);
