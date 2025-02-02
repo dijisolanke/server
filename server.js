@@ -66,21 +66,14 @@ async function getTurnCredentials() {
 }
 
 function handleRoomEnd(roomId) {
-  const room = activeRooms.get(roomId);
-  if (room) {
-    // Notify all participants in the room
+  if (activeRooms.has(roomId)) {
     io.to(roomId).emit("roomEnded", { permanent: true });
-
-    // Add to ended rooms with timestamp
     endedRooms.add(roomId);
-
-    // Delete from active rooms
     activeRooms.delete(roomId);
 
-    // Clean up ended room after 3 seconds
     setTimeout(() => {
       endedRooms.delete(roomId);
-    }, 3 * 1000);
+    }, 60 * 60 * 1000);
   }
 }
 
@@ -185,7 +178,9 @@ io.on("connection", (socket) => {
   });
 
   socket.on("mediaPermissionDenied", ({ roomId }) => {
-    socket.to(roomId).emit(" mediaPermissionDenied ");
+    if (isValidParticipant(socket, roomId)) {
+      socket.to(roomId).emit("mediaPermissionDenied");
+    }
   });
 
   socket.on("disconnect", () => {
