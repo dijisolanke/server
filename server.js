@@ -47,7 +47,7 @@ io.on("connection", (socket) => {
       waitingUsers.map((user) => user.alias)
     );
 
-    if (waitingUsers.length >= 2 && activeRooms.size < 1) {
+    if (waitingUsers.length >= 2 && activeRooms.size <= 1) {
       //Logic for pairing users
       const currentUser = waitingUsers.shift();
       const partner = waitingUsers.shift();
