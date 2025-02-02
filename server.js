@@ -23,7 +23,7 @@ const io = socketIo(server, {
 });
 
 function attemptPairing() {
-  while (waitingUsers.length >= 2 && activeRooms.size <= 1) {
+  while (waitingUsers.length >= 2 && activeRooms.size <= 30) {
     const currentUser = waitingUsers.shift();
     const partner = waitingUsers.shift();
 
