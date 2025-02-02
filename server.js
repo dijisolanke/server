@@ -76,6 +76,13 @@ io.on("connection", (socket) => {
     console.log(`${alias} has joined`);
   });
 
+  socket.on("requestWaitingUsers", () => {
+    socket.emit(
+      "waitingUsersUpdate",
+      waitingUsers.map((user) => user.alias)
+    );
+  });
+
   socket.on("requestTurnCredentials", async () => {
     const credentials = await getTurnCredentials();
     // console.log("credentials", credentials);
