@@ -47,7 +47,7 @@ io.on("connection", (socket) => {
       waitingUsers.map((user) => user.alias)
     );
 
-    if (waitingUsers.length >= 2 && activeRooms.size <= 1) {
+    while (waitingUsers.length >= 2 && activeRooms.size < 1) {
       //Logic for pairing users
       const currentUser = waitingUsers.shift();
       const partner = waitingUsers.shift();
@@ -68,7 +68,8 @@ io.on("connection", (socket) => {
         roomId,
         isInitiator: false,
       });
-    } else if (activeRooms.size >= 1) {
+    }
+    if (activeRooms.size > 1) {
       socket.emit(
         "roomsFullError",
         "All rooms are currently occupied. Please try again later"
