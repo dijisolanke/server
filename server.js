@@ -157,7 +157,7 @@ io.on("connection", (socket) => {
       handleRoomEnd(roomId);
       attemptPairing();
     }
-    console.log(`${socket.alias} has left`);
+    console.log(`${socket.alias} has left.`);
   });
 
   socket.on("error", (error) => {
