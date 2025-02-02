@@ -6,6 +6,8 @@ const courtJester = require("./courtJester");
 const axios = require("axios");
 require("dotenv").config();
 
+let activeRooms = 0;
+
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
@@ -45,7 +47,7 @@ io.on("connection", (socket) => {
       waitingUsers.map((user) => user.alias)
     );
 
-    if (waitingUsers.length >= 2) {
+    if (waitingUsers.length >= 2 && activeRooms.size < 1) {
       //Logic for pairing users
       const currentUser = waitingUsers.shift();
       const partner = waitingUsers.shift();
@@ -54,16 +56,23 @@ io.on("connection", (socket) => {
       currentUser.join(roomId);
       partner.join(roomId);
 
+      activeRooms.add(roomId);
+
       io.to(currentUser.id).emit("paired", {
         partnerAlias: partner.alias,
         roomId,
-        isInitiator: true, // Add this
+        isInitiator: true,
       });
       io.to(partner.id).emit("paired", {
         partnerAlias: currentUser.alias,
         roomId,
-        isInitiator: false, // Add this
+        isInitiator: false,
       });
+    } else if (activeRooms.size >= 1) {
+      socket.emit(
+        "roomsFullError",
+        "All rooms are currently occupied. Please try again later"
+      );
     }
 
     console.log(`${alias} has joined`);
@@ -93,7 +102,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("ice-candidate", (data) => {
-    console.log("ICE candidate received:", data);
+    // console.log("ICE candidate received:", data);
     socket.to(data.to).emit("ice-candidate", {
       candidate: data.candidate,
       from: socket.id,
@@ -110,6 +119,7 @@ io.on("connection", (socket) => {
     if (roomId) {
       socket.to(roomId).emit("partnerLeft");
       socket.leave(roomId);
+      activeRooms.delete(roomId);
     }
   });
 
@@ -123,6 +133,10 @@ io.on("connection", (socket) => {
       "waitingUsersUpdate",
       waitingUsers.map((user) => user.alias)
     );
+    const roomId = [...socket.rooms].find((room) => room !== socket.id);
+    if (roomId) {
+      activeRooms.delete(roomId);
+    }
     console.log(`${socket.alias} has left`);
   });
 
