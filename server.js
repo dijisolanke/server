@@ -6,7 +6,7 @@ const courtJester = require("./courtJester");
 const axios = require("axios");
 require("dotenv").config();
 
-let activeRooms = 0;
+let activeRooms = new Set();
 
 const app = express();
 const server = http.createServer(app);
