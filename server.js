@@ -6,6 +6,8 @@ const courtJester = require("./courtJester");
 const axios = require("axios");
 require("dotenv").config();
 
+let activeRooms = new Set();
+
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
@@ -19,6 +21,30 @@ const io = socketIo(server, {
     credentials: true,
   },
 });
+
+function attemptPairing() {
+  while (waitingUsers.length >= 2 && activeRooms.size <= 30) {
+    const currentUser = waitingUsers.shift();
+    const partner = waitingUsers.shift();
+
+    const roomId = `${currentUser.id}-${partner.id}`;
+    currentUser.join(roomId);
+    partner.join(roomId);
+
+    activeRooms.add(roomId);
+
+    io.to(currentUser.id).emit("paired", {
+      partnerAlias: partner.alias,
+      roomId,
+      isInitiator: true,
+    });
+    io.to(partner.id).emit("paired", {
+      partnerAlias: currentUser.alias,
+      roomId,
+      isInitiator: false,
+    });
+  }
+}
 
 async function getTurnCredentials() {
   try {
@@ -45,38 +71,20 @@ io.on("connection", (socket) => {
       waitingUsers.map((user) => user.alias)
     );
 
-    if (waitingUsers.length >= 2) {
-      const currentUser = waitingUsers.shift();
-      const partner = waitingUsers.shift();
-
-      const roomId = `${currentUser.id}-${partner.id}`;
-      currentUser.join(roomId);
-      partner.join(roomId);
-
-      io.to(currentUser.id).emit("paired", {
-        partnerAlias: partner.alias,
-        roomId,
-        isInitiator: true, // Add this
-      });
-      io.to(partner.id).emit("paired", {
-        partnerAlias: currentUser.alias,
-        roomId,
-        isInitiator: false, // Add this
-      });
-    }
+    attemptPairing();
 
     console.log(`${alias} has joined`);
   });
 
   socket.on("requestTurnCredentials", async () => {
     const credentials = await getTurnCredentials();
-    console.log("credentials", credentials); // remove later
+    // console.log("credentials", credentials);
     socket.emit("turnCredentials", credentials);
   });
 
   // WebRTC Signaling
   socket.on("offer", (data) => {
-    console.log("offer received", data);
+    // console.log("offer received", data);
     socket.to(data.to).emit("offer", {
       offer: data.offer,
       from: socket.id,
@@ -84,7 +92,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("answer", (data) => {
-    console.log("Answer received:", data);
+    // console.log("Answer received:", data);
     socket.to(data.to).emit("answer", {
       answer: data.answer,
       from: socket.id,
@@ -92,7 +100,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("ice-candidate", (data) => {
-    console.log("ICE candidate received:", data);
+    // console.log("ICE candidate received:", data);
     socket.to(data.to).emit("ice-candidate", {
       candidate: data.candidate,
       from: socket.id,
@@ -109,11 +117,13 @@ io.on("connection", (socket) => {
     if (roomId) {
       socket.to(roomId).emit("partnerLeft");
       socket.leave(roomId);
+      activeRooms.delete(roomId);
+      attemptPairing();
     }
   });
 
   socket.on("mediaPermissionDenied", ({ roomId }) => {
-    socket.to(roomId).emit("mediaPermissionDenied");
+    socket.to(roomId).emit(" mediaPermissionDenied ");
   });
 
   socket.on("disconnect", () => {
@@ -122,6 +132,11 @@ io.on("connection", (socket) => {
       "waitingUsersUpdate",
       waitingUsers.map((user) => user.alias)
     );
+    const roomId = [...socket.rooms].find((room) => room !== socket.id);
+    if (roomId) {
+      activeRooms.delete(roomId);
+      attemptPairing();
+    }
     console.log(`${socket.alias} has left`);
   });
 
