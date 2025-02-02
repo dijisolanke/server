@@ -22,6 +22,30 @@ const io = socketIo(server, {
   },
 });
 
+function attemptPairing() {
+  while (waitingUsers.length >= 2 && activeRooms.size <= 1) {
+    const currentUser = waitingUsers.shift();
+    const partner = waitingUsers.shift();
+
+    const roomId = `${currentUser.id}-${partner.id}`;
+    currentUser.join(roomId);
+    partner.join(roomId);
+
+    activeRooms.add(roomId);
+
+    io.to(currentUser.id).emit("paired", {
+      partnerAlias: partner.alias,
+      roomId,
+      isInitiator: true,
+    });
+    io.to(partner.id).emit("paired", {
+      partnerAlias: currentUser.alias,
+      roomId,
+      isInitiator: false,
+    });
+  }
+}
+
 async function getTurnCredentials() {
   try {
     const response = await axios.get(
@@ -47,35 +71,7 @@ io.on("connection", (socket) => {
       waitingUsers.map((user) => user.alias)
     );
 
-    while (waitingUsers.length >= 2 && activeRooms.size < 1) {
-      //Logic for pairing users
-      const currentUser = waitingUsers.shift();
-      const partner = waitingUsers.shift();
-
-      const roomId = `${currentUser.id}-${partner.id}`;
-      currentUser.join(roomId);
-      partner.join(roomId);
-
-      activeRooms.add(roomId);
-
-      io.to(currentUser.id).emit("paired", {
-        partnerAlias: partner.alias,
-        roomId,
-        isInitiator: true,
-      });
-      io.to(partner.id).emit("paired", {
-        partnerAlias: currentUser.alias,
-        roomId,
-        isInitiator: false,
-      });
-    }
-    if (activeRooms.size > 1) {
-      socket.emit(
-        "roomsFullError",
-        "All rooms are currently occupied. Please try again later"
-      );
-      console.log("full housw");
-    }
+    attemptPairing();
 
     console.log(`${alias} has joined`);
   });
@@ -122,6 +118,7 @@ io.on("connection", (socket) => {
       socket.to(roomId).emit("partnerLeft");
       socket.leave(roomId);
       activeRooms.delete(roomId);
+      attemptPairing();
     }
   });
 
@@ -138,6 +135,7 @@ io.on("connection", (socket) => {
     const roomId = [...socket.rooms].find((room) => room !== socket.id);
     if (roomId) {
       activeRooms.delete(roomId);
+      attemptPairing();
     }
     console.log(`${socket.alias} has left`);
   });
